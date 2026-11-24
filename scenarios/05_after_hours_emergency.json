@@ -1,0 +1,16 @@
+{
+  "name": "after_hours_emergency",
+  "description": "Office closed. A burst pipe is an emergency, so the call goes straight to the on-call line.",
+  "start_time": "2030-01-06T02:10",
+  "caller_number": "+15555550146",
+  "turns": [
+    "Emergency! A pipe burst and my basement is flooding"
+  ],
+  "expect": {
+    "outcome": "emergency_transfer",
+    "path": ["greet", "after_hours", "handoff", "ended"],
+    "transfer_to": "+15555550199",
+    "leads": 1,
+    "lead_reason": "emergency"
+  }
+}

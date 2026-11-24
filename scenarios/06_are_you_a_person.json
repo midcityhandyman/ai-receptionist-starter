@@ -1,0 +1,22 @@
+{
+  "name": "are_you_a_person",
+  "description": "Open hours. Caller asks if this is a real person, gets an honest answer, rejects the first windows, then books from the next set.",
+  "start_time": "2030-01-07T09:05",
+  "caller_number": "",
+  "turns": [
+    "Wait, am I talking to a real person?",
+    "Okay. My air conditioner stopped cooling",
+    "00104",
+    "None of those work for me",
+    "Wednesday morning",
+    "This is Casey Placeholder",
+    "555-555-0188",
+    "Yes"
+  ],
+  "expect": {
+    "outcome": "booked",
+    "path": ["greet", "qualify", "service_area", "offer_times", "contact", "book", "ended"],
+    "bookings": 1,
+    "leads": 0
+  }
+}

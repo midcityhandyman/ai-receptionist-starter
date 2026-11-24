@@ -1,0 +1,17 @@
+{
+  "name": "cannot_understand",
+  "description": "Open hours. The assistant cannot work out the job after two tries, so it stops guessing and hands off.",
+  "start_time": "2030-01-09T15:45",
+  "caller_number": "+15555550147",
+  "turns": [
+    "Well it's kind of hard to explain",
+    "The thing in the hallway is doing the thing again"
+  ],
+  "expect": {
+    "outcome": "handed_off",
+    "path": ["greet", "qualify", "handoff", "ended"],
+    "transfer_to": "+15555550100",
+    "leads": 1,
+    "lead_reason": "could_not_qualify"
+  }
+}

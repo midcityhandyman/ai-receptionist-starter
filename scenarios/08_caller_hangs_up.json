@@ -1,0 +1,17 @@
+{
+  "name": "caller_hangs_up",
+  "description": "Open hours. Caller drops off after hearing the times. The partial details are saved as a lead so the team can follow up.",
+  "start_time": "2030-01-10T08:20",
+  "caller_number": "+15555550148",
+  "turns": [
+    "My water heater is leaking",
+    "00101"
+  ],
+  "expect": {
+    "outcome": "abandoned",
+    "path": ["greet", "qualify", "service_area", "offer_times", "ended"],
+    "bookings": 0,
+    "leads": 1,
+    "lead_reason": "abandoned"
+  }
+}

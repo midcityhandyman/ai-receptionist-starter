@@ -1,0 +1,19 @@
+{
+  "name": "after_hours_message",
+  "description": "Office closed. Not an emergency, so the assistant takes a message and promises a callback. No times are offered.",
+  "start_time": "2030-01-07T21:30",
+  "caller_number": "+15555550145",
+  "turns": [
+    "It's not an emergency, my dishwasher won't drain",
+    "00103",
+    "Jordan Example",
+    "No, use 555-555-0177"
+  ],
+  "expect": {
+    "outcome": "lead_captured",
+    "path": ["greet", "after_hours", "service_area", "contact", "ended"],
+    "bookings": 0,
+    "leads": 1,
+    "lead_reason": "after_hours"
+  }
+}

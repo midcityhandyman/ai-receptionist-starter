@@ -1,0 +1,20 @@
+{
+  "name": "happy_path_booking",
+  "description": "Open hours. Caller with a leaky faucet in the service area books the second window offered.",
+  "start_time": "2030-01-07T10:15",
+  "caller_number": "+15555550142",
+  "turns": [
+    "Hi, I have a leaky faucet in my kitchen",
+    "It's 00102",
+    "The second one works",
+    "My name is Alex Sample",
+    "Yes it is",
+    "Yes please"
+  ],
+  "expect": {
+    "outcome": "booked",
+    "path": ["greet", "qualify", "service_area", "offer_times", "contact", "book", "ended"],
+    "bookings": 1,
+    "leads": 0
+  }
+}

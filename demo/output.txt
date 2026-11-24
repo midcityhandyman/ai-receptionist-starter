@@ -1,0 +1,331 @@
+==============================================================================
+SCENARIO: happy_path_booking
+Open hours. Caller with a leaky faucet in the service area books the second
+window offered.
+Call time: Monday 2030-01-07 10:15 (office open)
+Caller ID: +15555550142
+------------------------------------------------------------------------------
+      [state] greet -> qualify
+  ASSISTANT: Thanks for calling Example Home Services. I'm the automated
+             assistant, not a person. I can book a service visit or get you to
+             someone on the team. What can we help you with today?
+  CALLER:    Hi, I have a leaky faucet in my kitchen
+      [state] qualify -> service_area
+  ASSISTANT: Got it, that sounds like plumbing work. What is the five digit
+             ZIP code where the work is needed?
+  CALLER:    It's 00102
+      [tool] availability {"job_type": "plumbing", "zip_code": "00102", "limit": 3} -> 3 open windows
+      [state] service_area -> offer_times
+  ASSISTANT: Good news, we cover that area. I have these arrival windows open:
+             Tuesday, January 8, between 8 and 10 AM; Tuesday, January 8,
+             between 10 AM and 12 PM; Tuesday, January 8, between 1 and 3 PM.
+             Which works best? You can also say none of those.
+  CALLER:    The second one works
+      [state] offer_times -> contact
+  ASSISTANT: Tuesday, January 8, between 10 AM and 12 PM, got it. Can I get
+             your name?
+  CALLER:    My name is Alex Sample
+  ASSISTANT: Thanks, Alex Sample. Is 555-555-0142 the best number to reach
+             you?
+  CALLER:    Yes it is
+      [state] contact -> book
+  ASSISTANT: To confirm: a plumbing visit, arriving Tuesday, January 8,
+             between 10 AM and 12 PM, in ZIP code 00102, under the name Alex
+             Sample. Should I book it?
+  CALLER:    Yes please
+      [tool] book {"slot_id": "2030-01-08T10:00", "job_type": "plumbing", "name": "Alex Sample", "phone": "5555550142", "zip_code": "00102", "description": "Hi, I have a leaky faucet in my kitchen", "idempotency_key": "sim-happy_path_booking:2030-01-08T10:00"} -> booked BK-0001
+      [state] book -> ended
+  ASSISTANT: You're booked. Your confirmation number is BK-0001. A technician
+             will arrive Tuesday, January 8, between 10 AM and 12 PM. Thanks
+             for calling Example Home Services. Goodbye.
+      [action] hangup
+------------------------------------------------------------------------------
+OUTCOME: booked
+  path:         greet > qualify > service_area > offer_times > contact > book > ended
+  confirmation: BK-0001
+  lead:         none
+  transfer to:  none
+  expectations: PASS
+
+==============================================================================
+SCENARIO: out_of_service_area
+Open hours. Caller is outside the service area, so no visit is offered and the
+call ends politely.
+Call time: Monday 2030-01-07 11:00 (office open)
+Caller ID: +15555550143
+------------------------------------------------------------------------------
+      [state] greet -> qualify
+  ASSISTANT: Thanks for calling Example Home Services. I'm the automated
+             assistant, not a person. I can book a service visit or get you to
+             someone on the team. What can we help you with today?
+  CALLER:    My furnace is making a banging noise
+      [state] qualify -> service_area
+  ASSISTANT: Got it, that sounds like heating and cooling work. What is the
+             five digit ZIP code where the work is needed?
+  CALLER:    zero zero nine nine nine
+      [tool] create_lead {"reason": "out_of_area", "job_type": "hvac", "description": "My furnace is making a banging noise", "phone": "5555550143", "zip_code": "00999", "urgency": "normal"} -> lead LD-0001
+      [state] service_area -> ended
+  ASSISTANT: I'm sorry, ZIP code 00999 is outside our service area, so I can't
+             book a visit there. Thanks for calling Example Home Services.
+             Goodbye.
+      [action] hangup
+------------------------------------------------------------------------------
+OUTCOME: out_of_area
+  path:         greet > qualify > service_area > ended
+  confirmation: none
+  lead:         LD-0001 (reason: out_of_area)
+  transfer to:  none
+  expectations: PASS
+
+==============================================================================
+SCENARIO: asks_for_a_human
+Open hours. Part way through, the caller asks for a person. The assistant
+saves what it has as a lead and transfers.
+Call time: Tuesday 2030-01-08 14:30 (office open)
+Caller ID: +15555550144
+------------------------------------------------------------------------------
+      [state] greet -> qualify
+  ASSISTANT: Thanks for calling Example Home Services. I'm the automated
+             assistant, not a person. I can book a service visit or get you to
+             someone on the team. What can we help you with today?
+  CALLER:    I need an outlet replaced in the garage
+      [state] qualify -> service_area
+  ASSISTANT: Got it, that sounds like electrical work. What is the five digit
+             ZIP code where the work is needed?
+  CALLER:    Actually, can I just talk to a real person?
+      [state] service_area -> handoff
+      [tool] create_lead {"reason": "caller_requested", "job_type": "electrical", "description": "I need an outlet replaced in the garage", "phone": "5555550144", "urgency": "normal"} -> lead LD-0001
+      [state] handoff -> ended
+  ASSISTANT: Sure, I'll connect you with someone on the team now. Please hold.
+      [action] transfer to +15555550100
+------------------------------------------------------------------------------
+OUTCOME: handed_off
+  path:         greet > qualify > service_area > handoff > ended
+  confirmation: none
+  lead:         LD-0001 (reason: caller_requested)
+  transfer to:  +15555550100
+  expectations: PASS
+
+==============================================================================
+SCENARIO: after_hours_message
+Office closed. Not an emergency, so the assistant takes a message and promises
+a callback. No times are offered.
+Call time: Monday 2030-01-07 21:30 (after hours)
+Caller ID: +15555550145
+------------------------------------------------------------------------------
+      [state] greet -> after_hours
+  ASSISTANT: Thanks for calling Example Home Services. I'm the automated
+             assistant, not a person. The office is closed right now, but I
+             can take a message for a callback on the next business day. If
+             this is an emergency, say emergency. What do you need help with?
+  CALLER:    It's not an emergency, my dishwasher won't drain
+      [state] after_hours -> service_area
+  ASSISTANT: Okay, I'll note that for the team. What is the five digit ZIP
+             code where the work is needed?
+  CALLER:    00103
+      [state] service_area -> contact
+  ASSISTANT: Can I get your name?
+  CALLER:    Jordan Example
+  ASSISTANT: Thanks, Jordan Example. Is 555-555-0145 the best number to reach
+             you?
+  CALLER:    No, use 555-555-0177
+      [tool] create_lead {"reason": "after_hours", "job_type": "appliance", "description": "It's not an emergency, my dishwasher won't drain", "name": "Jordan Example", "phone": "5555550177", "zip_code": "00103", "urgency": "normal"} -> lead LD-0001
+      [state] contact -> ended
+  ASSISTANT: Thanks, Jordan Example. I've passed this along and someone from
+             the team will call you back on the next business day. Goodbye.
+      [action] hangup
+------------------------------------------------------------------------------
+OUTCOME: lead_captured
+  path:         greet > after_hours > service_area > contact > ended
+  confirmation: none
+  lead:         LD-0001 (reason: after_hours)
+  transfer to:  none
+  expectations: PASS
+
+==============================================================================
+SCENARIO: after_hours_emergency
+Office closed. A burst pipe is an emergency, so the call goes straight to the
+on-call line.
+Call time: Sunday 2030-01-06 02:10 (after hours)
+Caller ID: +15555550146
+------------------------------------------------------------------------------
+      [state] greet -> after_hours
+  ASSISTANT: Thanks for calling Example Home Services. I'm the automated
+             assistant, not a person. The office is closed right now, but I
+             can take a message for a callback on the next business day. If
+             this is an emergency, say emergency. What do you need help with?
+  CALLER:    Emergency! A pipe burst and my basement is flooding
+      [state] after_hours -> handoff
+      [tool] create_lead {"reason": "emergency", "job_type": "plumbing", "description": "Emergency! A pipe burst and my basement is flooding", "phone": "5555550146", "urgency": "urgent"} -> lead LD-0001
+      [state] handoff -> ended
+  ASSISTANT: If anyone is in danger, or you smell gas, hang up and call 911.
+             I'm connecting you with our on-call technician now. Please stay
+             on the line.
+      [action] transfer to +15555550199
+------------------------------------------------------------------------------
+OUTCOME: emergency_transfer
+  path:         greet > after_hours > handoff > ended
+  confirmation: none
+  lead:         LD-0001 (reason: emergency)
+  transfer to:  +15555550199
+  expectations: PASS
+
+==============================================================================
+SCENARIO: are_you_a_person
+Open hours. Caller asks if this is a real person, gets an honest answer,
+rejects the first windows, then books from the next set.
+Call time: Monday 2030-01-07 09:05 (office open)
+Caller ID: (blocked)
+------------------------------------------------------------------------------
+      [state] greet -> qualify
+  ASSISTANT: Thanks for calling Example Home Services. I'm the automated
+             assistant, not a person. I can book a service visit or get you to
+             someone on the team. What can we help you with today?
+  CALLER:    Wait, am I talking to a real person?
+  ASSISTANT: I'm an automated assistant, not a person. If you would rather
+             talk with someone on the team, just say so. What can we help you
+             with today?
+  CALLER:    Okay. My air conditioner stopped cooling
+      [state] qualify -> service_area
+  ASSISTANT: Got it, that sounds like heating and cooling work. What is the
+             five digit ZIP code where the work is needed?
+  CALLER:    00104
+      [tool] availability {"job_type": "hvac", "zip_code": "00104", "limit": 3} -> 3 open windows
+      [state] service_area -> offer_times
+  ASSISTANT: Good news, we cover that area. I have these arrival windows open:
+             Tuesday, January 8, between 8 and 10 AM; Tuesday, January 8,
+             between 10 AM and 12 PM; Tuesday, January 8, between 1 and 3 PM.
+             Which works best? You can also say none of those.
+  CALLER:    None of those work for me
+      [tool] availability {"job_type": "hvac", "zip_code": "00104", "limit": 3, "after": "2030-01-08T13:00"} -> 3 open windows
+  ASSISTANT: Here are the next ones: Tuesday, January 8, between 3 and 5 PM;
+             Wednesday, January 9, between 8 and 10 AM; Wednesday, January 9,
+             between 10 AM and 12 PM. Which works best? You can also say none
+             of those.
+  CALLER:    Wednesday morning
+      [state] offer_times -> contact
+  ASSISTANT: Wednesday, January 9, between 8 and 10 AM, got it. Can I get your
+             name?
+  CALLER:    This is Casey Placeholder
+  ASSISTANT: Thanks, Casey Placeholder. What is the best phone number to reach
+             you, with area code?
+  CALLER:    555-555-0188
+      [state] contact -> book
+  ASSISTANT: To confirm: a heating and cooling visit, arriving Wednesday,
+             January 9, between 8 and 10 AM, in ZIP code 00104, under the name
+             Casey Placeholder. Should I book it?
+  CALLER:    Yes
+      [tool] book {"slot_id": "2030-01-09T08:00", "job_type": "hvac", "name": "Casey Placeholder", "phone": "5555550188", "zip_code": "00104", "description": "Okay. My air conditioner stopped cooling", "idempotency_key": "sim-are_you_a_person:2030-01-09T08:00"} -> booked BK-0001
+      [state] book -> ended
+  ASSISTANT: You're booked. Your confirmation number is BK-0001. A technician
+             will arrive Wednesday, January 9, between 8 and 10 AM. Thanks for
+             calling Example Home Services. Goodbye.
+      [action] hangup
+------------------------------------------------------------------------------
+OUTCOME: booked
+  path:         greet > qualify > service_area > offer_times > contact > book > ended
+  confirmation: BK-0001
+  lead:         none
+  transfer to:  none
+  expectations: PASS
+
+==============================================================================
+SCENARIO: cannot_understand
+Open hours. The assistant cannot work out the job after two tries, so it stops
+guessing and hands off.
+Call time: Wednesday 2030-01-09 15:45 (office open)
+Caller ID: +15555550147
+------------------------------------------------------------------------------
+      [state] greet -> qualify
+  ASSISTANT: Thanks for calling Example Home Services. I'm the automated
+             assistant, not a person. I can book a service visit or get you to
+             someone on the team. What can we help you with today?
+  CALLER:    Well it's kind of hard to explain
+  ASSISTANT: I can help with plumbing, electrical, heating and cooling,
+             appliance repair, and general handyman work. Which of those is
+             closest to what you need?
+  CALLER:    The thing in the hallway is doing the thing again
+      [state] qualify -> handoff
+      [tool] create_lead {"reason": "could_not_qualify", "description": "The thing in the hallway is doing the thing again", "phone": "5555550147", "urgency": "normal"} -> lead LD-0001
+      [state] handoff -> ended
+  ASSISTANT: I'm having trouble with that, so I'll connect you with someone on
+             the team who can help. Please hold.
+      [action] transfer to +15555550100
+------------------------------------------------------------------------------
+OUTCOME: handed_off
+  path:         greet > qualify > handoff > ended
+  confirmation: none
+  lead:         LD-0001 (reason: could_not_qualify)
+  transfer to:  +15555550100
+  expectations: PASS
+
+==============================================================================
+SCENARIO: caller_hangs_up
+Open hours. Caller drops off after hearing the times. The partial details are
+saved as a lead so the team can follow up.
+Call time: Thursday 2030-01-10 08:20 (office open)
+Caller ID: +15555550148
+------------------------------------------------------------------------------
+      [state] greet -> qualify
+  ASSISTANT: Thanks for calling Example Home Services. I'm the automated
+             assistant, not a person. I can book a service visit or get you to
+             someone on the team. What can we help you with today?
+  CALLER:    My water heater is leaking
+      [state] qualify -> service_area
+  ASSISTANT: Got it, that sounds like plumbing work. What is the five digit
+             ZIP code where the work is needed?
+  CALLER:    00101
+      [tool] availability {"job_type": "plumbing", "zip_code": "00101", "limit": 3} -> 3 open windows
+      [state] service_area -> offer_times
+  ASSISTANT: Good news, we cover that area. I have these arrival windows open:
+             Friday, January 11, between 8 and 10 AM; Friday, January 11,
+             between 10 AM and 12 PM; Friday, January 11, between 1 and 3 PM.
+             Which works best? You can also say none of those.
+      [note] caller hung up
+      [tool] create_lead {"reason": "abandoned", "job_type": "plumbing", "description": "My water heater is leaking", "phone": "5555550148", "zip_code": "00101", "urgency": "normal"} -> lead LD-0001
+      [state] offer_times -> ended
+------------------------------------------------------------------------------
+OUTCOME: abandoned
+  path:         greet > qualify > service_area > offer_times > ended
+  confirmation: none
+  lead:         LD-0001 (reason: abandoned)
+  transfer to:  none
+  expectations: PASS
+
+==============================================================================
+SUMMARY
+  PASS  happy_path_booking               booked
+  PASS  out_of_service_area              out_of_area
+  PASS  asks_for_a_human                 handed_off
+  PASS  after_hours_message              lead_captured
+  PASS  after_hours_emergency            emergency_transfer
+  PASS  are_you_a_person                 booked
+  PASS  cannot_understand                handed_off
+  PASS  caller_hangs_up                  abandoned
+8 of 8 scenarios met their expectations
+
+==============================================================================
+TOOL ENDPOINTS (the same handlers the HTTP server exposes)
+==============================================================================
+POST /tools/availability
+  request:  {"job_type": "plumbing", "zip": "00102", "limit": 2}
+  response: 200 {"in_service_area": true, "slots": [{"slot_id": "2030-01-08T08:00", "start": "2030-01-08T08:00:00", "end": "2030-01-08T10:00:00", "label": "Tuesday, January 8, between 8 and 10 AM"}, {"slot_id": "2030-01-08T10:00", "start": "2030-01-08T10:00:00", "end": "2030-01-08T12:00:00", "label": "Tuesday, January 8, between 10 AM and 12 PM"}]}
+
+POST /tools/book
+  request:  {"slot_id": "2030-01-08T08:00", "job_type": "plumbing", "name": "Alex Sample", "phone": "555-555-0142", "zip": "00102", "idempotency_key": "demo-1"}
+  response: 200 {"status": "booked", "confirmation": "BK-0001", "slot_id": "2030-01-08T08:00", "slot_label": "Tuesday, January 8, between 8 and 10 AM", "job_type": "plumbing", "name": "Alex Sample", "phone": "5555550142", "zip": "00102", "description": ""}
+
+A second caller tries the same window:
+POST /tools/book
+  request:  {"slot_id": "2030-01-08T08:00", "job_type": "plumbing", "name": "Riley Testcase", "phone": "555-555-0142", "zip": "00102", "idempotency_key": "demo-2"}
+  response: 409 {"error": "slot_unavailable", "message": "that window is no longer open"}
+
+POST /tools/create-lead
+  request:  {"reason": "callback_requested", "job_type": "hvac", "name": "Riley Testcase", "phone": "555-555-0155", "zip": "00104", "description": "Thermostat is blank"}
+  response: 200 {"status": "created", "lead_id": "LD-0001", "reason": "callback_requested", "urgency": "normal", "job_type": "hvac", "description": "Thermostat is blank", "name": "Riley Testcase", "phone": "5555550155", "zip": "00104", "call_id": null, "created_at": "2030-01-07T10:15"}
+
+A request without the shared secret:
+POST /tools/availability
+  request:  {"job_type": "plumbing", "zip": "00102"}
+  response: 401 {"error": "unauthorized"}
+

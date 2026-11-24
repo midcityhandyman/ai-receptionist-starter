@@ -1,0 +1,17 @@
+{
+  "name": "asks_for_a_human",
+  "description": "Open hours. Part way through, the caller asks for a person. The assistant saves what it has as a lead and transfers.",
+  "start_time": "2030-01-08T14:30",
+  "caller_number": "+15555550144",
+  "turns": [
+    "I need an outlet replaced in the garage",
+    "Actually, can I just talk to a real person?"
+  ],
+  "expect": {
+    "outcome": "handed_off",
+    "path": ["greet", "qualify", "service_area", "handoff", "ended"],
+    "transfer_to": "+15555550100",
+    "leads": 1,
+    "lead_reason": "caller_requested"
+  }
+}

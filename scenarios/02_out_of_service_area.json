@@ -1,0 +1,17 @@
+{
+  "name": "out_of_service_area",
+  "description": "Open hours. Caller is outside the service area, so no visit is offered and the call ends politely.",
+  "start_time": "2030-01-07T11:00",
+  "caller_number": "+15555550143",
+  "turns": [
+    "My furnace is making a banging noise",
+    "zero zero nine nine nine"
+  ],
+  "expect": {
+    "outcome": "out_of_area",
+    "path": ["greet", "qualify", "service_area", "ended"],
+    "bookings": 0,
+    "leads": 1,
+    "lead_reason": "out_of_area"
+  }
+}

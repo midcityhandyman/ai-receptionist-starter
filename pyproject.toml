@@ -1,0 +1,12 @@
+[project]
+name = "ai-receptionist-starter"
+version = "0.1.0"
+description = "Voice AI receptionist for a home services company: explicit call flow state machine, tool endpoints, provider adapter and call simulator."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = []
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = [".", "tests"]
+addopts = "-q"
