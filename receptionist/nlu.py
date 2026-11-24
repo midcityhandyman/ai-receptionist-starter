@@ -1,13 +1,15 @@
 """Small rule based language understanding for caller utterances.
 
 This is intentionally simple and deterministic so the whole flow can be
-tested offline. A production build would swap these functions for a
-model call while keeping the same return types.
+tested offline. It is the default understanding backend, and the
+fallback whenever the optional model backend fails (see
+understanding.py and claude_understander.py).
 """
 
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from datetime import datetime
 from typing import List, Optional, Sequence
 
@@ -85,9 +87,9 @@ _NAME_LEAD_RE = re.compile(
     r"\b(?:my name is|name's|name is|this is|it's|it is|i am|i'm|call me)\s+(.+)",
     re.IGNORECASE,
 )
-_NOT_NAMES = {
+NOT_NAMES = {
     "yes", "no", "what", "why", "um", "uh", "hello", "hi", "the", "a", "not",
-    "sure", "okay", "ok", "sorry", "huh", "pardon",
+    "sure", "okay", "ok", "sorry", "huh", "pardon", "i", "am", "i'm",
 }
 
 
@@ -190,28 +192,50 @@ def extract_name(text: str) -> Optional[str]:
         return None
     if not match and len(words) > 3:
         return None
-    if any(w.lower() in _NOT_NAMES for w in words):
+    if any(w.lower() in NOT_NAMES for w in words):
         return None
     return " ".join(w.capitalize() for w in words)
 
 
-def _ordinal(text: str, count: int) -> Optional[int]:
+LAST_OPTION = -1
+
+
+@dataclass(frozen=True)
+class TimeWindow:
+    """What the caller said about when they want the visit.
+
+    This is only what was said. Turning it into one of the offered
+    windows is match_slot's job, so that choice stays in plain code
+    whichever understanding backend produced the TimeWindow.
+    """
+
+    option: Optional[int] = None  # 1 based position, or LAST_OPTION
+    weekday: Optional[int] = None  # 0 is Monday
+    part: Optional[str] = None  # "morning" or "afternoon"
+    hour: Optional[int] = None  # 24 hour clock
+    rejects_all: bool = False  # "none of those", "anything later"
+    said_no: bool = False  # a bare no, which only counts with nothing else
+
+    @property
+    def empty(self) -> bool:
+        return self == TimeWindow()
+
+
+def _option(text: str) -> Optional[int]:
     lowered = text.lower()
     words = [
-        (r"\b(first|1st)\b", 0),
-        (r"\b(second|2nd)\b", 1),
-        (r"\b(third|3rd)\b", 2),
-        (r"\b(last)\b", count - 1),
+        (r"\b(first|1st)\b", 1),
+        (r"\b(second|2nd)\b", 2),
+        (r"\b(third|3rd)\b", 3),
+        (r"\b(last)\b", LAST_OPTION),
     ]
-    for pattern, index in words:
-        if re.search(pattern, lowered) and 0 <= index < count:
-            return index
+    for pattern, option in words:
+        if re.search(pattern, lowered):
+            return option
     match = re.fullmatch(r"\W*(?:option|number)?\s*(one|two|three|[1-3])\W*", lowered)
     if match:
         token = match.group(1)
-        index = int(_DIGIT_WORDS.get(token, token)) - 1
-        if index < count:
-            return index
+        return int(_DIGIT_WORDS.get(token, token))
     return None
 
 
@@ -230,41 +254,62 @@ def _spoken_hour(text: str) -> Optional[int]:
     return hour
 
 
-def pick_slot(text: str, slots: Sequence[dict]) -> Optional[int]:
-    """Index of the offered slot the caller chose.
+def extract_window(text: str) -> TimeWindow:
+    """Read a time preference out of one utterance."""
+    lowered = text.lower()
+    weekday = next((n for n, name in enumerate(_WEEKDAYS) if name in lowered), None)
+    part = "morning" if "morning" in lowered else "afternoon" if "afternoon" in lowered else None
+    return TimeWindow(
+        option=_option(text),
+        weekday=weekday,
+        part=part,
+        hour=_spoken_hour(text),
+        rejects_all=bool(_NONE_RE.search(lowered)),
+        said_no=yes_no(text) is False,
+    )
+
+
+def match_slot(window: TimeWindow, slots: Sequence[dict]) -> Optional[int]:
+    """Index of the offered slot a TimeWindow points at.
 
     Returns NONE_OF_THESE when the caller rejects all of them and None
-    when the answer could not be understood.
+    when the answer does not single one out.
     """
     if not slots:
         return None
-    index = _ordinal(text, len(slots))
-    if index is not None:
-        return index
+    if window.option is not None:
+        index = len(slots) - 1 if window.option == LAST_OPTION else window.option - 1
+        if 0 <= index < len(slots):
+            return index
 
-    lowered = text.lower()
     candidates = list(range(len(slots)))
     starts = [datetime.fromisoformat(s["start"]) for s in slots]
     filtered = False
-
-    for number, name in enumerate(_WEEKDAYS):
-        if name in lowered:
-            candidates = [i for i in candidates if starts[i].weekday() == number]
-            filtered = True
-            break
-    if "morning" in lowered:
+    if window.weekday is not None:
+        candidates = [i for i in candidates if starts[i].weekday() == window.weekday]
+        filtered = True
+    if window.part == "morning":
         candidates = [i for i in candidates if starts[i].hour < 12]
         filtered = True
-    elif "afternoon" in lowered:
+    elif window.part == "afternoon":
         candidates = [i for i in candidates if starts[i].hour >= 12]
         filtered = True
-    hour = _spoken_hour(text)
-    if hour is not None:
-        candidates = [i for i in candidates if starts[i].hour == hour]
+    if window.hour is not None:
+        candidates = [i for i in candidates if starts[i].hour == window.hour]
         filtered = True
 
     if filtered and candidates:
         return candidates[0]
-    if _NONE_RE.search(lowered) or (not filtered and yes_no(text) is False):
+    if window.rejects_all or (not filtered and window.said_no):
         return NONE_OF_THESE
     return None
+
+
+def pick_slot(text: str, slots: Sequence[dict]) -> Optional[int]:
+    """Index of the offered slot the caller chose, straight from the text."""
+    return match_slot(extract_window(text), slots)
+
+
+def digits_spoken(text: str, digits: str) -> bool:
+    """True when this exact run of digits was said, spoken digits included."""
+    return digits in _digit_runs(text)

@@ -29,7 +29,7 @@ def post(app, path, body, headers=SECRET):
 
 def test_health_needs_no_secret(app):
     assert app.handle("GET", "/health", {}, b"") == (
-        200, {"status": "ok", "voice_provider": "mock"},
+        200, {"status": "ok", "voice_provider": "mock", "understanding": "keyword"},
     )
 
 

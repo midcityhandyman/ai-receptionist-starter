@@ -1,0 +1,46 @@
+{
+  "name": "model_fallback_to_keyword_rules",
+  "description": "Open hours, blocked caller ID. The model call times out, returns text that is not the schema, refuses, and reports low confidence on four turns in a row. Each turn falls back to the keyword rules and the call still books. The phone number turn is never sent to the model.",
+  "start_time": "2030-01-07T10:15",
+  "caller_number": "",
+  "turns": [
+    "My furnace is not heating",
+    "00101",
+    "The first one",
+    "My name is Riley Testcase",
+    "555-555-0177",
+    "Yes"
+  ],
+  "recorded_model_replies": [
+    {
+      "_error": "timeout"
+    },
+    {
+      "_text": "Sure! The ZIP code is 00101."
+    },
+    {
+      "_stop_reason": "refusal"
+    },
+    {
+      "intent": "give_details",
+      "caller_name": "Riley Testcase",
+      "confidence": "low"
+    },
+    null,
+    {
+      "intent": "answer_yes"
+    }
+  ],
+  "expect": {
+    "outcome": "booked",
+    "bookings": 1,
+    "leads": 0,
+    "model_turns": 1,
+    "fallbacks": [
+      "timeout",
+      "schema_mismatch",
+      "refusal",
+      "low_confidence"
+    ]
+  }
+}

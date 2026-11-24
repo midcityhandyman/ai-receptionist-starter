@@ -1,12 +1,15 @@
 """Voice AI receptionist starter for a home services company.
 
-The package is dependency free. The main pieces are:
+The package has no required dependencies. The main pieces are:
 
 - states: the call flow as an explicit state machine
 - flow: the engine that walks a call through those states
+- understanding: what the caller said, from keyword rules (default) or
+  from Claude (claude_understander, optional, needs the anthropic SDK)
 - tools: availability, booking and lead capture
 - server: HTTP endpoints a voice platform calls
 - providers: voice provider adapters, including an offline mock
+- vapi_tools: the tools in Vapi's custom tool format (from its docs)
 - simulator: scripted fake calls that print transcripts and outcomes
 """
 
@@ -27,4 +30,4 @@ __all__ = [
     "Turn",
 ]
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"

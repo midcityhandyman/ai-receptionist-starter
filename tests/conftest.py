@@ -12,11 +12,13 @@ CALLER = "+15555550142"
 class Harness:
     """A receptionist with a clock the test controls."""
 
-    def __init__(self, now: datetime, config: BusinessConfig = None):
+    def __init__(self, now: datetime, config: BusinessConfig = None, understander=None):
         self.now = now
         self.config = config or BusinessConfig()
         self.tools = ToolService(self.config, lambda: self.now)
-        self.receptionist = Receptionist(self.config, self.tools, lambda: self.now)
+        self.receptionist = Receptionist(
+            self.config, self.tools, lambda: self.now, understander
+        )
 
     def call(self, lines, call_id="c1", caller=CALLER):
         """Start a call, say each line, return the list of turns."""

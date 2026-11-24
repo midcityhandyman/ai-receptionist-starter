@@ -3,11 +3,20 @@
 Run from the repository root:
 
     python demo/run_demo.py
+    python demo/run_demo.py --understanding claude
 
-No network access and no API keys are needed. The captured output of
-this script is saved in demo/output.txt.
+No network access and no API keys are needed by default. The captured
+output of the default run is saved in demo/output.txt.
+
+--understanding picks how caller lines are understood: keyword (the
+default) plays the rule based scenarios and then the model path
+scenarios with recorded replies from a fake client, all offline.
+claude plays every scenario against the real model through the
+Anthropic SDK, which needs the SDK and credentials and sends the
+scripted caller lines to the API.
 """
 
+import argparse
 import json
 import sys
 from datetime import datetime
@@ -57,10 +66,30 @@ def tool_endpoint_demo() -> None:
     )
     print("A request without the shared secret:")
     call(app, "/tools/availability", {"job_type": "plumbing", "zip": "00102"}, secret="")
+    print("The same availability tool in Vapi's custom tool format")
+    print("(built from Vapi's documentation, never run against a Vapi account):")
+    call(
+        app,
+        "/vapi/tools",
+        {"message": {"type": "tool-calls", "toolCallList": [
+            {"id": "call_demo_1", "type": "function", "function": {
+                "name": "check_availability",
+                "arguments": {"job_type": "hvac", "zip": "00104", "limit": 1}}}]}},
+    )
 
 
-def main() -> int:
-    code = simulator.main([])
+def main(argv=None) -> int:
+    parser = argparse.ArgumentParser(description="Offline demo of the receptionist starter.")
+    parser.add_argument(
+        "--understanding", choices=(simulator.KEYWORD, simulator.CLAUDE),
+        default=simulator.KEYWORD,
+        help="keyword (default, offline) or claude (live model, needs the SDK and credentials)",
+    )
+    mode = parser.parse_args(argv).understanding
+    code = simulator.main(["--understanding", mode])
+    if mode == simulator.KEYWORD:
+        print()
+        code = simulator.main(["--understanding", simulator.RECORDED]) or code
     print()
     tool_endpoint_demo()
     return code

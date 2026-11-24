@@ -5,6 +5,7 @@
     POST /tools/book           book a window
     POST /tools/create-lead    save a lead for follow up
     POST /voice/events         call events, answered by the state machine
+    POST /vapi/tools           the same three tools in Vapi's custom tool format
 
 When TOOL_SHARED_SECRET is set, every POST must send it in the
 X-Tool-Secret header.
@@ -24,6 +25,8 @@ from .config import BusinessConfig, RuntimeConfig
 from .flow import Receptionist, UnknownCall
 from .providers import CallRunner, ProviderError, VoiceProvider, get_provider
 from .tools import ToolError, ToolService
+from .understanding import Understander, get_understander
+from .vapi_tools import VAPI_TOOLS_PATH, VapiPayloadError, handle_tool_calls
 
 MAX_BODY_BYTES = 64 * 1024
 
@@ -60,12 +63,18 @@ class App:
         runtime: Optional[RuntimeConfig] = None,
         clock: Optional[Callable[[], datetime]] = None,
         provider: Optional[VoiceProvider] = None,
+        understander: Optional[Understander] = None,
     ):
         self.business = business or BusinessConfig()
         self.runtime = runtime or RuntimeConfig()
         clock = clock or datetime.now
         self.tools = ToolService(self.business, clock)
-        self.receptionist = Receptionist(self.business, self.tools, clock)
+        self.understander = understander or get_understander(
+            self.runtime.understanding_backend,
+            self.runtime.understanding_model,
+            self.runtime.understanding_timeout_seconds,
+        )
+        self.receptionist = Receptionist(self.business, self.tools, clock, self.understander)
         self.provider = provider or get_provider(self.runtime)
         self.runner = CallRunner(self.receptionist, self.provider)
 
@@ -76,8 +85,12 @@ class App:
         if path == "/health":
             if method != "GET":
                 return 405, {"error": "method_not_allowed"}
-            return 200, {"status": "ok", "voice_provider": self.provider.name}
-        if path not in _TOOL_FIELDS and path != "/voice/events":
+            return 200, {
+                "status": "ok",
+                "voice_provider": self.provider.name,
+                "understanding": self.understander.name,
+            }
+        if path not in _TOOL_FIELDS and path not in ("/voice/events", VAPI_TOOLS_PATH):
             return 404, {"error": "not_found"}
         if method != "POST":
             return 405, {"error": "method_not_allowed"}
@@ -91,6 +104,11 @@ class App:
             return 400, {"error": "invalid_json", "message": "body must be a JSON object"}
         if path == "/voice/events":
             return self._voice_event(payload)
+        if path == VAPI_TOOLS_PATH:
+            try:
+                return 200, handle_tool_calls(payload, self._tool)
+            except VapiPayloadError as exc:
+                return 400, {"error": "invalid_event", "message": str(exc)}
         return self._tool(path, payload)
 
     def _authorized(self, headers: Mapping[str, str]) -> bool:
@@ -161,6 +179,7 @@ def main() -> None:
     server = make_server(app, runtime.host, runtime.port)
     print(f"listening on http://{runtime.host}:{server.server_address[1]}")
     print(f"voice provider: {app.provider.name}")
+    print(f"understanding: {app.understander.name}")
     if not runtime.tool_shared_secret:
         print("warning: TOOL_SHARED_SECRET is not set, endpoints are open")
     try:

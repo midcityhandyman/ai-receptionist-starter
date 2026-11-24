@@ -1,0 +1,56 @@
+{
+  "name": "model_paraphrase_booking",
+  "description": "Open hours. Every caller line is phrased so the keyword rules miss it. With the model path the call books; with keyword rules alone the same lines end in a handoff.",
+  "start_time": "2030-01-07T10:15",
+  "caller_number": "+15555550143",
+  "turns": [
+    "Water keeps dripping from the tap in my bathroom",
+    "We're over in Sampleton, zero zero one zero three",
+    "Let's go with the middle option",
+    "You can put it under Jordan Example",
+    "That's the one",
+    "Go for it"
+  ],
+  "recorded_model_replies": [
+    {
+      "intent": "service_request",
+      "job_type": "plumbing",
+      "urgency": "routine"
+    },
+    {
+      "intent": "give_details",
+      "zip_code": "00103",
+      "place_name": "Sampleton"
+    },
+    {
+      "intent": "choose_time",
+      "choice": "second"
+    },
+    {
+      "intent": "give_details",
+      "caller_name": "Jordan Example"
+    },
+    {
+      "intent": "answer_yes"
+    },
+    {
+      "intent": "answer_yes"
+    }
+  ],
+  "expect": {
+    "outcome": "booked",
+    "path": [
+      "greet",
+      "qualify",
+      "service_area",
+      "offer_times",
+      "contact",
+      "book",
+      "ended"
+    ],
+    "bookings": 1,
+    "leads": 0,
+    "model_turns": 6,
+    "fallbacks": []
+  }
+}

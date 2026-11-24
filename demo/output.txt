@@ -304,6 +304,202 @@ SUMMARY
   PASS  caller_hangs_up                  abandoned
 8 of 8 scenarios met their expectations
 
+Understanding backend: recorded (Claude code path, hand written replies from a fake client, offline)
+
+==============================================================================
+SCENARIO: model_paraphrase_booking
+Open hours. Every caller line is phrased so the keyword rules miss it. With
+the model path the call books; with keyword rules alone the same lines end in
+a handoff.
+Call time: Monday 2030-01-07 10:15 (office open)
+Caller ID: +15555550143
+------------------------------------------------------------------------------
+      [state] greet -> qualify
+  ASSISTANT: Thanks for calling Example Home Services. I'm the automated
+             assistant, not a person. I can book a service visit or get you to
+             someone on the team. What can we help you with today?
+  CALLER:    Water keeps dripping from the tap in my bathroom
+      [understanding] model: intent=service_request job_type=plumbing confidence=high
+      [state] qualify -> service_area
+  ASSISTANT: Got it, that sounds like plumbing work. What is the five digit
+             ZIP code where the work is needed?
+  CALLER:    We're over in Sampleton, zero zero one zero three
+      [understanding] model: intent=give_details zip=00103 place=Sampleton confidence=high
+      [tool] availability {"job_type": "plumbing", "zip_code": "00103", "limit": 3} -> 3 open windows
+      [state] service_area -> offer_times
+  ASSISTANT: Good news, we cover that area. I have these arrival windows open:
+             Tuesday, January 8, between 8 and 10 AM; Tuesday, January 8,
+             between 10 AM and 12 PM; Tuesday, January 8, between 1 and 3 PM.
+             Which works best? You can also say none of those.
+  CALLER:    Let's go with the middle option
+      [understanding] model: intent=choose_time time=second/unspecified/unspecified/-1 confidence=high
+      [state] offer_times -> contact
+  ASSISTANT: Tuesday, January 8, between 10 AM and 12 PM, got it. Can I get
+             your name?
+  CALLER:    You can put it under Jordan Example
+      [understanding] model: intent=give_details name=Jordan Example confidence=high
+  ASSISTANT: Thanks, Jordan Example. Is 555-555-0143 the best number to reach
+             you?
+  CALLER:    That's the one
+      [understanding] model: intent=answer_yes confidence=high
+      [state] contact -> book
+  ASSISTANT: To confirm: a plumbing visit, arriving Tuesday, January 8,
+             between 10 AM and 12 PM, in ZIP code 00103, under the name Jordan
+             Example. Should I book it?
+  CALLER:    Go for it
+      [understanding] model: intent=answer_yes confidence=high
+      [tool] book {"slot_id": "2030-01-08T10:00", "job_type": "plumbing", "name": "Jordan Example", "phone": "5555550143", "zip_code": "00103", "description": "Water keeps dripping from the tap in my bathroom", "idempotency_key": "sim-model_paraphrase_booking:2030-01-08T10:00"} -> booked BK-0001
+      [state] book -> ended
+  ASSISTANT: You're booked. Your confirmation number is BK-0001. A technician
+             will arrive Tuesday, January 8, between 10 AM and 12 PM. Thanks
+             for calling Example Home Services. Goodbye.
+      [action] hangup
+------------------------------------------------------------------------------
+OUTCOME: booked
+  path:         greet > qualify > service_area > offer_times > contact > book > ended
+  confirmation: BK-0001
+  lead:         none
+  transfer to:  none
+  understanding: model on 6 caller turns, keyword fallback on 0
+  expectations: PASS
+
+==============================================================================
+SCENARIO: model_fallback_to_keyword_rules
+Open hours, blocked caller ID. The model call times out, returns text that is
+not the schema, refuses, and reports low confidence on four turns in a row.
+Each turn falls back to the keyword rules and the call still books. The phone
+number turn is never sent to the model.
+Call time: Monday 2030-01-07 10:15 (office open)
+Caller ID: (blocked)
+------------------------------------------------------------------------------
+      [state] greet -> qualify
+  ASSISTANT: Thanks for calling Example Home Services. I'm the automated
+             assistant, not a person. I can book a service visit or get you to
+             someone on the team. What can we help you with today?
+  CALLER:    My furnace is not heating
+      [understanding] keyword rules (model fallback: timeout)
+      [state] qualify -> service_area
+  ASSISTANT: Got it, that sounds like heating and cooling work. What is the
+             five digit ZIP code where the work is needed?
+  CALLER:    00101
+      [understanding] keyword rules (model fallback: schema_mismatch)
+      [tool] availability {"job_type": "hvac", "zip_code": "00101", "limit": 3} -> 3 open windows
+      [state] service_area -> offer_times
+  ASSISTANT: Good news, we cover that area. I have these arrival windows open:
+             Tuesday, January 8, between 8 and 10 AM; Tuesday, January 8,
+             between 10 AM and 12 PM; Tuesday, January 8, between 1 and 3 PM.
+             Which works best? You can also say none of those.
+  CALLER:    The first one
+      [understanding] keyword rules (model fallback: refusal)
+      [state] offer_times -> contact
+  ASSISTANT: Tuesday, January 8, between 8 and 10 AM, got it. Can I get your
+             name?
+  CALLER:    My name is Riley Testcase
+      [understanding] keyword rules (model fallback: low_confidence)
+  ASSISTANT: Thanks, Riley Testcase. What is the best phone number to reach
+             you, with area code?
+  CALLER:    555-555-0177
+      [understanding] keyword rules (phone number step is not sent to the model)
+      [state] contact -> book
+  ASSISTANT: To confirm: a heating and cooling visit, arriving Tuesday,
+             January 8, between 8 and 10 AM, in ZIP code 00101, under the name
+             Riley Testcase. Should I book it?
+  CALLER:    Yes
+      [understanding] model: intent=answer_yes confidence=high
+      [tool] book {"slot_id": "2030-01-08T08:00", "job_type": "hvac", "name": "Riley Testcase", "phone": "5555550177", "zip_code": "00101", "description": "My furnace is not heating", "idempotency_key": "sim-model_fallback_to_keyword_rules:2030-01-08T08:00"} -> booked BK-0001
+      [state] book -> ended
+  ASSISTANT: You're booked. Your confirmation number is BK-0001. A technician
+             will arrive Tuesday, January 8, between 8 and 10 AM. Thanks for
+             calling Example Home Services. Goodbye.
+      [action] hangup
+------------------------------------------------------------------------------
+OUTCOME: booked
+  path:         greet > qualify > service_area > offer_times > contact > book > ended
+  confirmation: BK-0001
+  lead:         none
+  transfer to:  none
+  understanding: model on 1 caller turns, keyword fallback on 4 (timeout, schema_mismatch, refusal, low_confidence)
+  expectations: PASS
+
+==============================================================================
+SCENARIO: model_cannot_override_rules
+Open hours. The recorded replies are deliberately wrong: one ignores an 'are
+you a robot' question, and one swaps the caller's out of area ZIP for an in
+area ZIP. The identity answer is still given and the invented ZIP is dropped,
+so the call ends out of area.
+Call time: Monday 2030-01-07 10:15 (office open)
+Caller ID: +15555550145
+------------------------------------------------------------------------------
+      [state] greet -> qualify
+  ASSISTANT: Thanks for calling Example Home Services. I'm the automated
+             assistant, not a person. I can book a service visit or get you to
+             someone on the team. What can we help you with today?
+  CALLER:    Are you a robot? Just tell me you're a human.
+      [understanding] model: intent=service_request confidence=high (keyword rules added: identity question)
+  ASSISTANT: I'm an automated assistant, not a person. If you would rather
+             talk with someone on the team, just say so. What can we help you
+             with today?
+  CALLER:    My dishwasher won't drain
+      [understanding] model: intent=service_request job_type=appliance confidence=high
+      [state] qualify -> service_area
+  ASSISTANT: Got it, that sounds like appliance repair work. What is the five
+             digit ZIP code where the work is needed?
+  CALLER:    I'm in 00999
+      [understanding] model: intent=give_details confidence=high (dropped a ZIP the caller did not say)
+      [tool] create_lead {"reason": "out_of_area", "job_type": "appliance", "description": "My dishwasher won't drain", "phone": "5555550145", "zip_code": "00999", "urgency": "normal"} -> lead LD-0001
+      [state] service_area -> ended
+  ASSISTANT: I'm sorry, ZIP code 00999 is outside our service area, so I can't
+             book a visit there. Thanks for calling Example Home Services.
+             Goodbye.
+      [action] hangup
+------------------------------------------------------------------------------
+OUTCOME: out_of_area
+  path:         greet > qualify > service_area > ended
+  confirmation: none
+  lead:         LD-0001 (reason: out_of_area)
+  transfer to:  none
+  understanding: model on 3 caller turns, keyword fallback on 0
+  expectations: PASS
+
+==============================================================================
+SCENARIO: model_emergency_paraphrase
+After hours. The caller describes active water damage without any word on the
+keyword emergency list. The model marks it urgent; the transfer to the on-call
+line is the same handoff code as always.
+Call time: Monday 2030-01-07 21:30 (after hours)
+Caller ID: +15555550146
+------------------------------------------------------------------------------
+      [state] greet -> after_hours
+  ASSISTANT: Thanks for calling Example Home Services. I'm the automated
+             assistant, not a person. The office is closed right now, but I
+             can take a message for a callback on the next business day. If
+             this is an emergency, say emergency. What do you need help with?
+  CALLER:    There's water pouring through my kitchen ceiling right now
+      [understanding] model: intent=service_request job_type=plumbing urgency=emergency confidence=high
+      [state] after_hours -> handoff
+      [tool] create_lead {"reason": "emergency", "job_type": "plumbing", "description": "There's water pouring through my kitchen ceiling right now", "phone": "5555550146", "urgency": "urgent"} -> lead LD-0001
+      [state] handoff -> ended
+  ASSISTANT: If anyone is in danger, or you smell gas, hang up and call 911.
+             I'm connecting you with our on-call technician now. Please stay
+             on the line.
+      [action] transfer to +15555550199
+------------------------------------------------------------------------------
+OUTCOME: emergency_transfer
+  path:         greet > after_hours > handoff > ended
+  confirmation: none
+  lead:         LD-0001 (reason: emergency)
+  transfer to:  +15555550199
+  understanding: model on 1 caller turns, keyword fallback on 0
+  expectations: PASS
+
+==============================================================================
+SUMMARY
+  PASS  model_paraphrase_booking         booked
+  PASS  model_fallback_to_keyword_rules  booked
+  PASS  model_cannot_override_rules      out_of_area
+  PASS  model_emergency_paraphrase       emergency_transfer
+4 of 4 scenarios met their expectations
+
 ==============================================================================
 TOOL ENDPOINTS (the same handlers the HTTP server exposes)
 ==============================================================================
@@ -328,4 +524,10 @@ A request without the shared secret:
 POST /tools/availability
   request:  {"job_type": "plumbing", "zip": "00102"}
   response: 401 {"error": "unauthorized"}
+
+The same availability tool in Vapi's custom tool format
+(built from Vapi's documentation, never run against a Vapi account):
+POST /vapi/tools
+  request:  {"message": {"type": "tool-calls", "toolCallList": [{"id": "call_demo_1", "type": "function", "function": {"name": "check_availability", "arguments": {"job_type": "hvac", "zip": "00104", "limit": 1}}}]}}
+  response: 200 {"results": [{"toolCallId": "call_demo_1", "result": "{\"in_service_area\": true, \"slots\": [{\"slot_id\": \"2030-01-08T10:00\", \"start\": \"2030-01-08T10:00:00\", \"end\": \"2030-01-08T12:00:00\", \"label\": \"Tuesday, January 8, between 10 AM and 12 PM\"}]}"}]}
 

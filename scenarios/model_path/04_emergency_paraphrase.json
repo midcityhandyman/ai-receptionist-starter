@@ -1,0 +1,23 @@
+{
+  "name": "model_emergency_paraphrase",
+  "description": "After hours. The caller describes active water damage without any word on the keyword emergency list. The model marks it urgent; the transfer to the on-call line is the same handoff code as always.",
+  "start_time": "2030-01-07T21:30",
+  "caller_number": "+15555550146",
+  "turns": [
+    "There's water pouring through my kitchen ceiling right now"
+  ],
+  "recorded_model_replies": [
+    {
+      "intent": "service_request",
+      "job_type": "plumbing",
+      "urgency": "emergency"
+    }
+  ],
+  "expect": {
+    "outcome": "emergency_transfer",
+    "transfer_to": "+15555550199",
+    "lead_reason": "emergency",
+    "model_turns": 1,
+    "fallbacks": []
+  }
+}

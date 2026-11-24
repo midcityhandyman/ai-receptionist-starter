@@ -1,10 +1,22 @@
 [project]
 name = "ai-receptionist-starter"
-version = "0.1.0"
-description = "Voice AI receptionist for a home services company: explicit call flow state machine, tool endpoints, provider adapter and call simulator."
+version = "0.2.0"
+description = "Voice AI receptionist for a home services company: explicit call flow state machine, keyword or Claude caller understanding, tool endpoints, provider adapters and call simulator."
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = []
+
+[project.optional-dependencies]
+# Only needed for UNDERSTANDING_BACKEND=claude. Everything else, the
+# tests and the demo included, runs without it.
+claude = ["anthropic>=1.0"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["receptionist", "receptionist.providers"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

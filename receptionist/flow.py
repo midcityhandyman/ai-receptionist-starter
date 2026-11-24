@@ -4,6 +4,11 @@ One Receptionist instance handles many calls. Each call has a CallSession
 that sits in exactly one State. Every caller utterance is routed to the
 handler for the current state, which returns what to say next and, when
 the call is over, an action for the voice platform (transfer or hang up).
+
+Handlers never read the caller's text for meaning. They get an
+Understanding from the configured backend (understanding.py) and decide
+what to do with it here, so every decision is the same code whichever
+backend did the extracting.
 """
 
 from __future__ import annotations
@@ -17,6 +22,7 @@ from . import guardrails, nlu, prompts
 from .config import JOB_TYPES, BusinessConfig
 from .states import State, check_transition
 from .tools import ToolError, ToolService
+from .understanding import CLAUDE, CallContext, KeywordUnderstander, Understander, Understanding
 
 
 class UnknownCall(KeyError):
@@ -60,7 +66,7 @@ class CallSession:
     state: State = State.GREET
     path: List[State] = field(default_factory=lambda: [State.GREET])
     # Ordered log of everything that happened: (kind, text) where kind is
-    # assistant, caller, state, tool, action or note.
+    # assistant, caller, understanding, state, tool, action or note.
     events: List[Tuple[str, str]] = field(default_factory=list)
     job_type: Optional[str] = None
     description: str = ""
@@ -79,6 +85,11 @@ class CallSession:
     booking: Optional[dict] = None
     lead: Optional[dict] = None
     transfer_to: Optional[str] = None
+    place_name: Optional[str] = None
+    # How the caller's turns were understood: turns the model answered,
+    # and the reason for each turn that fell back to the keyword rules.
+    model_turns: int = 0
+    fallbacks: List[str] = field(default_factory=list)
 
     @property
     def transcript(self) -> List[Tuple[str, str]]:
@@ -98,6 +109,8 @@ class CallSession:
             "lead_id": self.lead["lead_id"] if self.lead else None,
             "transfer_to": self.transfer_to,
             "handoff_reason": self.handoff_reason,
+            "model_turns": self.model_turns,
+            "fallbacks": list(self.fallbacks),
         }
 
 
@@ -107,7 +120,9 @@ class Receptionist:
         config: Optional[BusinessConfig] = None,
         tools: Optional[ToolService] = None,
         clock: Optional[Callable[[], datetime]] = None,
+        understander: Optional[Understander] = None,
     ):
+        self.understander = understander or KeywordUnderstander()
         self.config = config or BusinessConfig()
         self.clock = clock or datetime.now
         self.tools = tools or ToolService(self.config, self.clock)
@@ -146,15 +161,16 @@ class Receptionist:
         if not text:
             return self._retry(session, prompts.DID_NOT_CATCH, "no_input")
         # Interrupts that apply in every state, checked before the handler.
-        if nlu.is_identity_question(text):
+        heard = self._understand(session, text)
+        if heard.asks_if_human:
             return self._ask(session, prompts.IDENTITY, session.last_question)
-        if nlu.is_emergency(text):
+        if heard.emergency:
             session.description = text
-            session.job_type = session.job_type or nlu.job_type(text)
+            session.job_type = session.job_type or heard.job_type
             return self._handoff(session, "emergency")
-        if nlu.wants_human(text):
+        if heard.wants_human:
             return self._handoff(session, "caller_requested")
-        return self._handlers[session.state](session, text)
+        return self._handlers[session.state](session, text, heard)
 
     def end_call(self, call_id: str) -> CallSession:
         """The caller hung up, or the platform reports the call is over."""
@@ -173,10 +189,50 @@ class Receptionist:
         except KeyError:
             raise UnknownCall(call_id) from None
 
+    # ----- understanding -----
+
+    _EXPECTING = {
+        State.QUALIFY: "job_description",
+        State.AFTER_HOURS: "after_hours_message",
+        State.SERVICE_AREA: "zip_code",
+        State.OFFER_TIMES: "time_choice",
+        State.BOOK: "booking_confirmation",
+    }
+    _CONTACT_EXPECTING = {
+        "name": "name",
+        "confirm_phone": "phone_confirmation",
+        "ask_phone": "phone_number",
+    }
+
+    def _understand(self, s: CallSession, text: str) -> Understanding:
+        """Ask the backend what was said, and log how it was understood.
+
+        The backend is given the caller's words and one label for what
+        was just asked. Nothing else about the call or the business.
+        """
+        if s.state is State.CONTACT:
+            expecting = self._CONTACT_EXPECTING[s.contact_step]
+        else:
+            expecting = self._EXPECTING[s.state]
+        heard = self.understander.understand(text, CallContext(expecting))
+        if heard.source == CLAUDE:
+            s.model_turns += 1
+            s.events.append(("understanding", f"model: {heard.detail}"))
+        elif heard.fallback_reason:
+            s.fallbacks.append(heard.fallback_reason)
+            s.events.append(
+                ("understanding", f"keyword rules (model fallback: {heard.fallback_reason})")
+            )
+        elif heard.detail:
+            s.events.append(("understanding", f"keyword rules ({heard.detail})"))
+        if heard.place_name:
+            s.place_name = heard.place_name
+        return heard
+
     # ----- state handlers -----
 
-    def _on_qualify(self, s: CallSession, text: str) -> Turn:
-        job = nlu.job_type(text)
+    def _on_qualify(self, s: CallSession, text: str, heard: Understanding) -> Turn:
+        job = heard.job_type
         if job is None:
             # Keep what was said so a human picking up the lead has context.
             s.description = text
@@ -186,27 +242,28 @@ class Receptionist:
         s.job_type = job
         s.description = text
         ack = prompts.JOB_ACK.format(job=JOB_TYPES[job])
-        return self._enter_service_area(s, text, ack)
+        return self._enter_service_area(s, heard, ack)
 
-    def _on_after_hours(self, s: CallSession, text: str) -> Turn:
+    def _on_after_hours(self, s: CallSession, text: str, heard: Understanding) -> Turn:
         message = nlu.strip_emergency_negation(text)
-        job = nlu.job_type(message)
+        job = heard.job_type
         if job is None and len(message.split()) < 4:
             # "No" or "not an emergency" on its own: still need the message.
             return self._retry(s, "Okay.", "no_input", prompts.ASK_AFTER_HOURS)
         s.job_type = job
         s.description = text
-        return self._enter_service_area(s, text, prompts.MESSAGE_ACK)
+        return self._enter_service_area(s, heard, prompts.MESSAGE_ACK)
 
-    def _enter_service_area(self, s: CallSession, text: str, ack: str) -> Turn:
+    def _enter_service_area(self, s: CallSession, heard: Understanding, ack: str) -> Turn:
         self._move(s, State.SERVICE_AREA)
-        if nlu.extract_zip(text):
+        if heard.zip_code:
             # The caller already gave the ZIP while describing the job.
-            return self._check_zip(s, nlu.extract_zip(text), ack)
+            return self._check_zip(s, heard.zip_code, ack)
         return self._ask(s, ack, prompts.ASK_ZIP)
 
-    def _on_service_area(self, s: CallSession, text: str) -> Turn:
-        zip_code = nlu.extract_zip(text)
+    def _on_service_area(self, s: CallSession, text: str, heard: Understanding) -> Turn:
+        # Only a ZIP is checked. A place name alone is noted, not trusted.
+        zip_code = heard.zip_code
         if zip_code is None:
             return self._retry(s, prompts.ZIP_RETRY, "no_input")
         return self._check_zip(s, zip_code, "")
@@ -246,8 +303,8 @@ class Receptionist:
         preface = " ".join(p for p in (ack, template.format(slots=spoken)) if p)
         return self._ask(s, preface, prompts.ASK_SLOT)
 
-    def _on_offer_times(self, s: CallSession, text: str) -> Turn:
-        choice = nlu.pick_slot(text, s.offered)
+    def _on_offer_times(self, s: CallSession, text: str, heard: Understanding) -> Turn:
+        choice = nlu.match_slot(heard.window, s.offered)
         if choice is None:
             return self._retry(s, prompts.DID_NOT_CATCH, "no_input")
         if choice == nlu.NONE_OF_THESE:
@@ -264,9 +321,9 @@ class Receptionist:
             return self._contact_done(s)
         return self._ask(s, f"{s.slot['label']}, got it.", prompts.ASK_NAME)
 
-    def _on_contact(self, s: CallSession, text: str) -> Turn:
+    def _on_contact(self, s: CallSession, text: str, heard: Understanding) -> Turn:
         if s.contact_step == "name":
-            name = nlu.extract_name(text)
+            name = heard.name
             if name is None:
                 return self._retry(s, prompts.NAME_RETRY, "no_input", prompts.ASK_NAME_AGAIN)
             s.name = name
@@ -280,9 +337,9 @@ class Receptionist:
             s.contact_step = "ask_phone"
             return self._ask(s, ack, prompts.ASK_PHONE)
 
-        phone = nlu.extract_phone(text)
+        phone = heard.phone
         if phone is None and s.contact_step == "confirm_phone":
-            answer = nlu.yes_no(text)
+            answer = heard.yes_no
             if answer is True:
                 phone = nlu.normalize_phone(s.caller_number)
             elif answer is False:
@@ -308,8 +365,8 @@ class Receptionist:
         )
         return self._ask(s, "", question)
 
-    def _on_book(self, s: CallSession, text: str) -> Turn:
-        answer = nlu.yes_no(text)
+    def _on_book(self, s: CallSession, text: str, heard: Understanding) -> Turn:
+        answer = heard.yes_no
         if answer is None:
             return self._retry(s, prompts.BOOK_UNCLEAR, "no_input")
         if answer is False:

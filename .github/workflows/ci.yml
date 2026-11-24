@@ -24,3 +24,9 @@ jobs:
         run: python -m pytest
       - name: Run the offline demo
         run: python demo/run_demo.py
+      # The optional Anthropic SDK needs no key to install. With it present
+      # the SDK tests run against a mock HTTP transport, still offline.
+      - name: Install the optional claude extra
+        run: pip install ".[claude]"
+      - name: Run tests again with the SDK installed
+        run: python -m pytest -rs

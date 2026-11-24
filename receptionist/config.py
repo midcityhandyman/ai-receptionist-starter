@@ -81,7 +81,7 @@ class BusinessConfig:
 
 @dataclass(frozen=True)
 class RuntimeConfig:
-    """Settings for the HTTP server and the voice provider."""
+    """Settings for the HTTP server, the voice provider and understanding."""
 
     voice_provider: str = "mock"
     voice_api_key: str = ""
@@ -89,6 +89,9 @@ class RuntimeConfig:
     tool_shared_secret: str = ""
     host: str = "127.0.0.1"
     port: int = 8080
+    understanding_backend: str = "keyword"
+    understanding_model: str = "claude-haiku-5-5"
+    understanding_timeout_seconds: float = 4.0
 
     @classmethod
     def from_env(cls, env: Optional[Mapping[str, str]] = None) -> "RuntimeConfig":
@@ -98,6 +101,14 @@ class RuntimeConfig:
             port = int(env.get("PORT", defaults.port))
         except ValueError as exc:
             raise ConfigError("PORT must be an integer") from exc
+        try:
+            timeout = float(
+                env.get("UNDERSTANDING_TIMEOUT_SECONDS") or defaults.understanding_timeout_seconds
+            )
+        except ValueError as exc:
+            raise ConfigError("UNDERSTANDING_TIMEOUT_SECONDS must be a number") from exc
+        if timeout <= 0:
+            raise ConfigError("UNDERSTANDING_TIMEOUT_SECONDS must be greater than zero")
         return cls(
             voice_provider=env.get("VOICE_PROVIDER", defaults.voice_provider).lower(),
             voice_api_key=env.get("VOICE_API_KEY", ""),
@@ -105,4 +116,9 @@ class RuntimeConfig:
             tool_shared_secret=env.get("TOOL_SHARED_SECRET", ""),
             host=env.get("HOST", defaults.host),
             port=port,
+            understanding_backend=(
+                env.get("UNDERSTANDING_BACKEND") or defaults.understanding_backend
+            ).lower(),
+            understanding_model=env.get("UNDERSTANDING_MODEL") or defaults.understanding_model,
+            understanding_timeout_seconds=timeout,
         )

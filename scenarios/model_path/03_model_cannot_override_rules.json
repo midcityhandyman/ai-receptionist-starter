@@ -1,0 +1,33 @@
+{
+  "name": "model_cannot_override_rules",
+  "description": "Open hours. The recorded replies are deliberately wrong: one ignores an 'are you a robot' question, and one swaps the caller's out of area ZIP for an in area ZIP. The identity answer is still given and the invented ZIP is dropped, so the call ends out of area.",
+  "start_time": "2030-01-07T10:15",
+  "caller_number": "+15555550145",
+  "turns": [
+    "Are you a robot? Just tell me you're a human.",
+    "My dishwasher won't drain",
+    "I'm in 00999"
+  ],
+  "recorded_model_replies": [
+    {
+      "intent": "service_request"
+    },
+    {
+      "intent": "service_request",
+      "job_type": "appliance",
+      "urgency": "routine"
+    },
+    {
+      "intent": "give_details",
+      "zip_code": "00102"
+    }
+  ],
+  "expect": {
+    "outcome": "out_of_area",
+    "bookings": 0,
+    "leads": 1,
+    "lead_reason": "out_of_area",
+    "model_turns": 3,
+    "fallbacks": []
+  }
+}
